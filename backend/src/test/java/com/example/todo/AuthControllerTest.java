@@ -134,4 +134,38 @@ class AuthControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.status").value(401));
     }
+
+    @Test
+    void register_withBlankFields_shouldReturnBadRequest() throws Exception {
+        RegisterRequest request = new RegisterRequest("", "invalid-email", "123");
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.errors", hasItem(containsString("Name is required"))))
+                .andExpect(jsonPath("$.errors", hasItem(containsString("Email format is invalid"))))
+                .andExpect(jsonPath("$.errors", hasItem(containsString("Password must be at least 6 characters"))));
+    }
+
+    @Test
+    void login_withInvalidEmailFormat_shouldReturnBadRequest() throws Exception {
+        LoginRequest request = new LoginRequest("not-an-email", "pass");
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void getMe_withTamperedToken_shouldReturnUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/auth/me")
+                        .header("Authorization", "Bearer invalid.tampered.token")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
 }

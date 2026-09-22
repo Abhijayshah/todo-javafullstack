@@ -142,17 +142,30 @@ to-do-java/
 ## Testing & Verification
 
 ### Running Automated Backend Tests
+#### Backend Tests (JUnit 5, Mockito, MockMvc)
 ```bash
 cd backend
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21
 export PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH
-mvn clean test
+mvn test
 ```
-All 17 integration tests pass, covering:
-- User registration and duplicate email conflicts (`409 Conflict`).
-- User authentication and bad credential handling (`401 Unauthorized`).
-- User isolation: regular users accessing another user's task ID receives `403 Forbidden`.
-- Search, filter, sorting, and pagination queries.
+**49 backend tests pass (100%)**, covering:
+- Pure unit tests for `TodoService` and `AuthService` with Mockito.
+- JJWT token creation, expiration, and signature tampering verification.
+- MockMvc integration tests for validation, 404 not found, and 401 unauthenticated requests.
+- User data isolation: regular users accessing another user's task ID receives `403 Forbidden`.
+- Admin privileges: elevated cross-tenant visibility.
+
+#### Frontend Tests (Vitest, React Testing Library)
+```bash
+cd frontend
+npm test
+```
+**22 frontend tests pass (100%)**, covering:
+- Protected routes and session initialization guards.
+- Login & Register views with form validation and demo account autofill.
+- Task CRUD: list rendering, create modal, edit modal, status toggle, and delete confirmation.
+- Status and Priority filtering.
 
 ### Quick Curl Verification Examples
 
@@ -180,7 +193,94 @@ curl -s -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/todos/999
 
 ---
 
-## Running the Application Locally
+## Running with Docker Compose (Production Setup)
+
+The application includes production-ready multi-stage Docker builds and Docker Compose orchestration for one-command deployment.
+
+### 1. Prerequisites
+- Docker Engine & Docker Compose (or Colima / Docker Desktop)
+
+### 2. Environment Configuration
+Copy the environment template and customize as needed:
+```bash
+cp .env.example .env
+```
+Default configuration:
+- `POSTGRES_PORT=5433` (maps container PostgreSQL 5432 to host 5433, avoiding local port conflicts)
+- `BACKEND_PORT=8080`
+- `FRONTEND_PORT=3000`
+- `SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/tododb`
+- `VITE_API_BASE_URL=/api` (Nginx proxies `/api` directly to backend container)
+
+### 3. Build & Launch Services
+Build images and start containers in the background:
+```bash
+docker compose up --build -d
+```
+
+Check container status and health:
+```bash
+docker compose ps
+```
+All three services (`todo-postgres`, `todo-backend`, `todo-frontend`) will report `(healthy)`.
+
+### 4. Access the Application
+- **Frontend Web UI:** [http://localhost:3000](http://localhost:3000)
+- **Backend REST API:** [http://localhost:8080/api](http://localhost:8080/api)
+- **Health Check Endpoint:** [http://localhost:8080/api/health](http://localhost:8080/api/health) or [http://localhost:3000/api/health](http://localhost:3000/api/health)
+- **Nginx Health Check:** [http://localhost:3000/health](http://localhost:3000/health)
+
+### 5. Verify PostgreSQL Data Persistence
+PostgreSQL data is mounted to a named Docker volume (`todo_postgres_data`):
+```bash
+# Stop containers (volume remains intact)
+docker compose down
+
+# Restart containers
+docker compose up -d
+```
+All users, authentication data, and tasks persist seamlessly across container restarts.
+
+To stop containers and completely remove volumes (reset database):
+```bash
+docker compose down -v
+```
+
+---
+
+## Docker Architecture & Multi-Stage Builds
+
+### Backend (`backend/Dockerfile`)
+- **Stage 1 (Builder):** `maven:3.9-eclipse-temurin-21-alpine`
+  - Caches dependencies using `COPY pom.xml` and `mvn dependency:resolve -B`.
+  - Compiles source code and packages executable fat JAR with `mvn clean package -DskipTests -B`.
+- **Stage 2 (Runtime):** `eclipse-temurin:21-jre-alpine`
+  - Minimal Alpine Linux JRE image (~150MB).
+  - Unprivileged non-root user `spring:spring` for container security.
+  - Container-aware JVM memory tuning (`-XX:+UseG1GC -XX:MaxRAMPercentage=75.0`).
+  - Active profile set to `prod` (`application-prod.yml`).
+  - Docker health check polling `/api/health`.
+
+### Frontend (`frontend/Dockerfile` & `frontend/nginx.conf`)
+- **Stage 1 (Builder):** `node:20-alpine`
+  - Clean reproducible install with `npm ci`.
+  - Builds optimized static assets using Vite (`npm run build`).
+- **Stage 2 (Runtime):** `nginx:1.27-alpine`
+  - High-performance, lightweight web server (~25MB).
+  - Reverse proxy `/api/` requests to `http://backend:8080/api/` (eliminates CORS in production).
+  - SPA client-side routing fallback (`try_files $uri $uri/ /index.html`).
+  - Production security headers (`X-Frame-Options`, `X-Content-Type-Options`, `X-XSS-Protection`).
+  - Gzip compression enabled for HTML, CSS, JS, SVG, and JSON.
+  - Dedicated `/health` endpoint for Docker container probes.
+
+### PostgreSQL Database (`postgres:16-alpine`)
+- Persisted with named volume `todo_postgres_data`.
+- Automated health check via `pg_isready -U postgres -d tododb`.
+- Network isolated on internal Docker bridge network `todo_network`.
+
+---
+
+## Running the Application Locally (Native Development)
 
 ### 1. Database Setup
 Ensure PostgreSQL is running:

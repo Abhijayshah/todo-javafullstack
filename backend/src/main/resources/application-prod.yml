@@ -1,0 +1,35 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  jpa:
+    hibernate:
+      ddl-auto: ${SPRING_JPA_HIBERNATE_DDL_AUTO:update}
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  datasource:
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+
+server:
+  error:
+    include-stacktrace: never
+    include-message: always
+    include-binding-errors: always
+
+logging:
+  level:
+    root: INFO
+    com.example.todo: INFO
+    org.springframework.web: WARN
+    org.springframework.security: INFO
+    org.hibernate: WARN

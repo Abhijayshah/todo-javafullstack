@@ -177,4 +177,100 @@ class TodoControllerTest {
                         .header("Authorization", "Bearer " + johnToken))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void getTodoById_whenNotFound_shouldReturn404() throws Exception {
+        mockMvc.perform(get("/api/todos/{id}", 99999L)
+                        .header("Authorization", "Bearer " + johnToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.error").value("Not Found"));
+    }
+
+    @Test
+    void createTodo_withBlankTitle_shouldReturn400BadRequest() throws Exception {
+        TodoRequest invalidRequest = new TodoRequest(
+                "   ",
+                "Valid description",
+                false,
+                Priority.HIGH,
+                LocalDate.now().plusDays(1)
+        );
+
+        mockMvc.perform(post("/api/todos")
+                        .header("Authorization", "Bearer " + johnToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400))
+                .andExpect(jsonPath("$.errors", hasItem(containsString("Title is required"))));
+    }
+
+    @Test
+    void createTodo_withTitleExceedingMaxLength_shouldReturn400BadRequest() throws Exception {
+        String longTitle = "A".repeat(256);
+        TodoRequest invalidRequest = new TodoRequest(
+                longTitle,
+                "Valid description",
+                false,
+                Priority.MEDIUM,
+                LocalDate.now().plusDays(1)
+        );
+
+        mockMvc.perform(post("/api/todos")
+                        .header("Authorization", "Bearer " + johnToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequest)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void createTodo_withMissingPriority_shouldReturn400BadRequest() throws Exception {
+        String payloadWithoutPriority = "{\"title\":\"Task without priority\"}";
+
+        mockMvc.perform(post("/api/todos")
+                        .header("Authorization", "Bearer " + johnToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payloadWithoutPriority))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void createTodo_withMalformedJson_shouldReturn400BadRequest() throws Exception {
+        String malformedJson = "{\"title\": \"Broken JSON...";
+
+        mockMvc.perform(post("/api/todos")
+                        .header("Authorization", "Bearer " + johnToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(malformedJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
+    @Test
+    void requestWithInvalidJwt_shouldReturn401Unauthorized() throws Exception {
+        mockMvc.perform(get("/api/todos")
+                        .header("Authorization", "Bearer invalid.jwt.token")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401));
+    }
+
+    @Test
+    void getTodos_asAdmin_shouldSeeAllUsersTodos() throws Exception {
+        User admin = userRepository.save(new User("Admin User", "admin@example.com", passwordEncoder.encode("admin123"), Role.ADMIN));
+        String adminToken = jwtService.generateToken(admin);
+
+        // Save a task for Alice as well
+        todoRepository.save(new Todo("Alice's Secret", "Desc", false, Priority.LOW, null, userAlice));
+
+        mockMvc.perform(get("/api/todos")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(2));
+    }
 }

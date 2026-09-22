@@ -18,5 +18,13 @@ backend/.env
 backend/.env.local
 *.log
 
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Docker
+docker-compose.override.yml
+
 # Temp files
 *.tmp
