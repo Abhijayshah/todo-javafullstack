@@ -1,6 +1,7 @@
-import axios, { AxiosError } from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { HealthResponse } from '../types/health';
 import { Todo, TodoRequest, PageResponse, TodoQueryParams } from '../types/todo';
+import { AuthResponse, LoginCredentials, RegisterData, User } from '../types/auth';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
 
@@ -12,10 +13,29 @@ export const apiClient = axios.create({
   timeout: 10000,
 });
 
-// Response interceptor for consistent, user-friendly error messages
+// Request interceptor to attach JWT token
+apiClient.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    const token = localStorage.getItem('todo_auth_token');
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
+// Response interceptor for consistent error handling and 401 expiration handling
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      // Token expired or unauthorized
+      localStorage.removeItem('todo_auth_token');
+      localStorage.removeItem('todo_auth_user');
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    }
+
     let errorMessage = 'Network error or backend server is unreachable';
     if (error.response?.data && typeof error.response.data === 'object') {
       const data = error.response.data as Record<string, unknown>;
@@ -32,6 +52,23 @@ apiClient.interceptors.response.use(
     return Promise.reject(new Error(errorMessage));
   }
 );
+
+export const authService = {
+  login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
+    return response.data;
+  },
+
+  register: async (data: RegisterData): Promise<AuthResponse> => {
+    const response = await apiClient.post<AuthResponse>('/auth/register', data);
+    return response.data;
+  },
+
+  getMe: async (): Promise<User> => {
+    const response = await apiClient.get<User>('/auth/me');
+    return response.data;
+  },
+};
 
 export const todoService = {
   getAll: async (params?: TodoQueryParams): Promise<PageResponse<Todo>> => {

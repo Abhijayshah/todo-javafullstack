@@ -4,6 +4,7 @@ import com.example.todo.dto.LoginRequest;
 import com.example.todo.dto.RegisterRequest;
 import com.example.todo.entity.Role;
 import com.example.todo.entity.User;
+import com.example.todo.repository.TodoRepository;
 import com.example.todo.repository.UserRepository;
 import com.example.todo.security.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;

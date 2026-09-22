@@ -1,6 +1,6 @@
 # Full-Stack Todo Application (Java 21 + Spring Boot 3 + React + PostgreSQL)
 
-A production-quality Full-Stack Todo Web Application built using modern enterprise Java and React best practices.
+A production-quality Full-Stack Todo Web Application built using modern enterprise Java and React best practices, featuring Spring Security 6 with JWT authentication, role-based authorization, and user data isolation.
 
 ---
 
@@ -12,13 +12,14 @@ The repository is organized as a clean monorepo:
 to-do-java/
 ├── backend/                  # Spring Boot 3.x REST API
 │   ├── src/main/java/com/example/todo/
-│   │   ├── config/           # CORS & MVC configuration beans
-│   │   ├── controller/       # REST API endpoints & HTTP request handling
-│   │   ├── service/          # Business logic & transaction boundaries (Phase 2)
-│   │   ├── repository/       # Spring Data JPA interfaces (Phase 2)
-│   │   ├── entity/           # Hibernate JPA database entities (Phase 2)
+│   │   ├── config/           # CORS, MVC & DataInitializer beans
+│   │   ├── controller/       # Auth & Todo REST API endpoints
+│   │   ├── service/          # Business logic & transaction boundaries (Todo, Auth)
+│   │   ├── repository/       # Spring Data JPA repositories & JPA Specifications
+│   │   ├── entity/           # Hibernate entities (User, Todo, Role)
 │   │   ├── dto/              # Immutable DTO records (Requests & Responses)
-│   │   ├── exception/        # Global exception handling & error models
+│   │   ├── security/         # Spring Security, JWT Service & Auth Filter
+│   │   ├── exception/        # Centralized RFC 7807 global exception handling
 │   │   └── TodoApplication.java # Spring Boot entry point
 │   ├── src/main/resources/
 │   │   └── application.yml   # Externalized configuration with env var fallbacks
@@ -26,11 +27,12 @@ to-do-java/
 │   └── .env.example          # Environment variables template
 ├── frontend/                 # Vite + React + TypeScript SPA
 │   ├── src/
-│   │   ├── components/       # Reusable UI components (Navbar, StatusBadge, etc.)
-│   │   ├── pages/            # Page views (HomePage, Dashboard, etc.)
-│   │   ├── services/         # Centralized Axios API client
-│   │   ├── types/            # TypeScript interfaces & types
-│   │   ├── App.tsx           # React Router & shell layout
+│   │   ├── components/       # Reusable UI (Navbar, Modals, ProtectedRoute, etc.)
+│   │   ├── context/          # React AuthContext (token storage, session revalidation)
+│   │   ├── pages/            # Views (Dashboard, Login, Register, System Health)
+│   │   ├── services/         # Centralized Axios API client with JWT interceptors
+│   │   ├── types/            # TypeScript interfaces (Todo, Auth, User, Health)
+│   │   ├── App.tsx           # React Router & protected route guards
 │   │   ├── main.tsx          # Application mount point
 │   │   └── index.css         # Tailwind CSS directives & global typography
 │   ├── index.html            # HTML entry point with Inter font
@@ -48,10 +50,12 @@ to-do-java/
 ### Backend
 - **Language & Runtime:** Java 21 (LTS)
 - **Framework:** Spring Boot 3.3.4
+- **Security & Tokens:** Spring Security 6, JJWT 0.12.6, BCrypt Password Encoder
 - **Build Tool:** Maven
 - **Modules:**
   - Spring Web (REST controllers, CORS filter)
-  - Spring Data JPA & Hibernate (Database ORM)
+  - Spring Security (Stateless JWT authentication, RBAC authorization)
+  - Spring Data JPA & Hibernate (Database ORM & dynamic criteria specifications)
   - Jakarta Bean Validation (Declarative input validation)
   - PostgreSQL JDBC Driver (Database connectivity)
   - Spring Boot Test / JUnit 5 / MockMvc (Automated testing)
@@ -62,25 +66,54 @@ to-do-java/
 - **Tooling & Bundler:** Vite
 - **Styling:** Tailwind CSS (Utility-first styling with custom palette)
 - **Icons:** Lucide React
-- **HTTP Client:** Axios (Centralized client with response interceptors)
-- **Routing:** React Router v6
+- **HTTP Client:** Axios (Centralized client with JWT request & 401 response interceptors)
+- **Routing:** React Router v6 with `<ProtectedRoute>` wrapper
 
 ### Database
 - **Database Engine:** PostgreSQL 16+
 
 ---
 
-## Backend Layered Architecture
+## Authentication & Security Features (Phase 5)
 
-The backend strictly adheres to layered architecture principles to decouple concerns:
+1. **Stateless JWT Authentication:** HMAC-SHA256 tokens generated on login/registration with configurable expiration and secrets (`app.jwt.secret`, `app.jwt.expiration-ms`).
+2. **BCrypt Password Hashing:** Passwords are never stored in plaintext and are hashed using BCrypt.
+3. **Role-Based Access Control (RBAC):**
+   - `USER`: Regular users who can create, view, update, complete, and delete their own tasks.
+   - `ADMIN`: Administrators with elevated privileges and cross-tenant task visibility.
+4. **Tenant Isolation:**
+   - Every `Todo` belongs to a `User` (`user_id` foreign key).
+   - Changing the task ID in the URL to access another user's task returns `403 Forbidden`.
+   - Dynamic search, filters, and pagination queries automatically apply user ownership filtering in `TodoSpecification`.
+5. **Default Pre-Seeded Accounts:**
+   - **Administrator:** `admin@todo.com` / `admin123` (Role: `ADMIN`)
+   - **Demo User:** `john@todo.com` / `password123` (Role: `USER`)
 
-1. **Controller Layer (`controller/`)**: Exposes REST endpoints, handles HTTP status codes, and accepts validated DTOs.
-2. **Service Layer (`service/`)**: Contains core business logic, domain rules, and transaction boundaries (`@Transactional`).
-3. **Repository Layer (`repository/`)**: Spring Data JPA repositories interfacing with PostgreSQL.
-4. **Entity Layer (`entity/`)**: Relational database entities mapped via Hibernate.
-5. **DTO Layer (`dto/`)**: Java 21 `record` classes used for requests and responses. JPA entities are **never** exposed directly to API consumers.
-6. **Exception Layer (`exception/`)**: Centralized `@RestControllerAdvice` producing RFC 7807-compliant structured error responses.
-7. **Config Layer (`config/`)**: Global application configuration such as CORS policies and web MVC settings.
+---
+
+## API Endpoints
+
+### Authentication Endpoints (`/api/auth/**`)
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| `POST` | `/api/auth/register` | Register a new user account and receive JWT | Public |
+| `POST` | `/api/auth/login` | Authenticate credentials and receive JWT | Public |
+| `GET` | `/api/auth/me` | Fetch authenticated user profile | Authenticated (`Bearer <token>`) |
+
+### Todo Endpoints (`/api/todos/**`)
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| `GET` | `/api/todos` | List user's tasks with search, filters, sorting & pagination | Authenticated (`Bearer <token>`) |
+| `POST` | `/api/todos` | Create a new task assigned to authenticated user | Authenticated (`Bearer <token>`) |
+| `GET` | `/api/todos/{id}` | Get task details (enforces ownership) | Authenticated (Owner or `ADMIN`) |
+| `PUT` | `/api/todos/{id}` | Update task details (enforces ownership) | Authenticated (Owner or `ADMIN`) |
+| `PATCH`| `/api/todos/{id}/complete` | Toggle completion status (enforces ownership) | Authenticated (Owner or `ADMIN`) |
+| `DELETE`| `/api/todos/{id}` | Delete task (enforces ownership) | Authenticated (Owner or `ADMIN`) |
+
+### Health & Diagnostics (`/api/health`)
+| Method | Endpoint | Description | Access |
+|---|---|---|---|
+| `GET` | `/api/health` | System health check (PostgreSQL status, Java version) | Public |
 
 ---
 
@@ -94,6 +127,8 @@ The backend strictly adheres to layered architecture principles to decouple conc
 | `SPRING_DATASOURCE_URL` | PostgreSQL JDBC connection URL | `jdbc:postgresql://localhost:5432/tododb` |
 | `SPRING_DATASOURCE_USERNAME` | PostgreSQL username | `postgres` |
 | `SPRING_DATASOURCE_PASSWORD` | PostgreSQL password | `postgres` |
+| `JWT_SECRET` | 256-bit+ HMAC secret key | Externalized in application.yml |
+| `JWT_EXPIRATION_MS` | Token validity in milliseconds | `86400000` (24h) |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated list of allowed origins | `http://localhost:5173,http://127.0.0.1:5173` |
 
 ### Frontend (`/frontend/.env`)
@@ -104,75 +139,69 @@ The backend strictly adheres to layered architecture principles to decouple conc
 
 ---
 
-## Getting Started
+## Testing & Verification
 
-### Prerequisites
-- **Java 21** (`openjdk@21`)
-- **Maven 3.9+**
-- **Node.js 20+** & **npm 10+**
-- **PostgreSQL 16+**
-
-### 1. Database Setup
-Create the PostgreSQL database:
-```bash
-createdb tododb
-# Or via psql:
-# CREATE DATABASE tododb;
-```
-
-### 2. Running the Backend
-From the repository root:
+### Running Automated Backend Tests
 ```bash
 cd backend
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+export PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH
+mvn clean test
+```
+All 17 integration tests pass, covering:
+- User registration and duplicate email conflicts (`409 Conflict`).
+- User authentication and bad credential handling (`401 Unauthorized`).
+- User isolation: regular users accessing another user's task ID receives `403 Forbidden`.
+- Search, filter, sorting, and pagination queries.
+
+### Quick Curl Verification Examples
+
+**1. Login as John Doe:**
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"john@todo.com","password":"password123"}' | grep -o '"token":"[^"]*' | cut -d'"' -f4)
+```
+
+**2. Fetch User Profile:**
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/auth/me | jq
+```
+
+**3. Fetch User's Scoped Tasks:**
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" "http://localhost:8080/api/todos?priority=HIGH" | jq
+```
+
+**4. Attempt Cross-User Access (returns 403 Forbidden):**
+```bash
+curl -s -i -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/todos/999
+```
+
+---
+
+## Running the Application Locally
+
+### 1. Database Setup
+Ensure PostgreSQL is running:
+```bash
+createdb tododb
+```
+
+### 2. Start Backend Server
+```bash
+cd backend
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21
+export PATH=/opt/homebrew/opt/openjdk@21/bin:$PATH
 mvn spring-boot:run
 ```
-The backend will start at `http://localhost:8080`.
+Backend starts on `http://localhost:8080`.
 
-Verify the health endpoint:
-```bash
-curl -s http://localhost:8080/api/health | jq
-```
-
-Expected response:
-```json
-{
-  "status": "UP",
-  "message": "Todo API is operational",
-  "timestamp": "2026-09-22T00:00:00Z",
-  "environment": "development",
-  "details": {
-    "service": "todo-backend",
-    "version": "0.0.1-SNAPSHOT",
-    "javaVersion": "21.0.12",
-    "database": "CONNECTED"
-  }
-}
-```
-
-### 3. Running the Frontend
-In a separate terminal:
+### 3. Start Frontend Development Server
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173` in your browser. The dashboard will automatically ping the backend health endpoint and display live system diagnostics.
-
----
-
-## Development Roadmap
-
-- **Phase 1: Project Foundation & Architecture** *(Current)*
-  - Monorepo structure, Spring Boot 3 + Java 21, React + Vite + Tailwind, Axios, CORS, `GET /api/health`.
-- **Phase 2: Todo CRUD Backend**
-  - Todo entity, repository, service, controller, DTOs, validation, exception handling.
-- **Phase 3: React Frontend CRUD**
-  - Dashboard, Todo list, create/edit modals, status toggle, delete confirmation.
-- **Phase 4: Search, Filter & Pagination**
-  - Title/description search, status & priority filters, sorting, Spring Data JPA pagination.
-- **Phase 5: Authentication & Authorization**
-  - Spring Security, JWT authentication, user registration/login, user-scoped Todos.
-- **Phase 6: Automated Testing**
-  - Comprehensive unit and integration test suite (JUnit 5, Mockito, MockMvc).
-- **Phase 7: Docker & Production Deployment**
-  - Multi-stage Dockerfiles, docker-compose orchestration, persistent database volume.
+Frontend runs on `http://localhost:5173`.
+Navigate to `http://localhost:5173` to test the login page with pre-seeded demo accounts!
