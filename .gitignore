@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# Java / Maven / Backend
+backend/target/
+backend/.env
+backend/.env.local
+*.log
+
+# Temp files
+*.tmp
